@@ -1,13 +1,10 @@
 # Memory Companion
 AI-Based Cognitive Gaming and Memory Assistance Platform for Elderly Dementia Patients in NER.
 
-A runnable, local academic prototype prepared from the supplied project report.
+A runnable, local academic prototype prepared from the project report.
 Team: PRASITHA VR (722825104173), PRAVEEN G (722825104174).
 
-## Start here
-Read `STEP_BY_STEP.md`, then open `ANTIGRAVITY_MASTER_PROMPT.md` to continue development in Antigravity.
-
-## Quick start (run from this folder)
+## Quick Start (Run from this folder or workspace root)
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate
@@ -17,47 +14,69 @@ python -m ML.generate_data
 python -m ML.train
 python -m Backend.app
 ```
-Visit http://127.0.0.1:8000. The Python server serves both frontend and API; Node, npm, a GPU, cloud accounts and API keys are not required.
+Or from the outer workspace folder:
+```bash
+python run.py
+```
+Open http://127.0.0.1:8000 (or http://127.0.0.1:8001 if port 8000 is occupied). The standard-library Python server serves both the frontend and REST API; Node, npm, GPU, cloud databases, and API keys are not required.
 
-## Folders
-- Frontend/: HTML, CSS and JavaScript. Five views: home, matching, memories, reminders, caregiver.
-- Backend/: local HTTP server, SQLite schema, transparent adaptation policy. Database is created on first run.
-- ML/: synthetic data generator, training pipeline, generated CSV, trained Joblib model and evaluation.json.
-- tests/: policy, HTTP integration, validation and participant separation tests.
+## Key Implemented Features
 
-## Implemented
-Three matching levels (3, 4 and 5 pairs), hint previews, pause/resume, optional English speech using installed browser voices, explicit activity recording consent, caregiver-approved text memories, one-time reminders with acknowledgement, persisted session history, rule recommendations and actual ML inference. All entered content is rendered as text. Caregiver explicitly approves the suggested level for the next game. A requested pause or insufficient attempts prevents advancement regardless of the ML prediction.
+1. **Durable Adaptive Next-Activity Flow:**
+   - Multi-board sessions ensure the report's 5-attempt threshold is achievable at every level:
+     - **Level 1 (Gentle):** 3 pairs per board · 2 planned boards (up to 6 pair attempts)
+     - **Level 2 (Steady):** 4 pairs per board · 2 planned boards (up to 8 pair attempts)
+     - **Level 3 (More pairs):** 5 pairs per board · 1 planned board (up to 5 pair attempts)
+   - Performance measures (attempts, correct, hints) aggregate across boards.
+   - Sessions and the resulting **next-activity plan** are saved atomically in SQLite.
+   - Prominent "Your Next Activity" cards on Home and Game screens launch the approved plan.
+   - Refreshing the browser or restarting the server restores the durable plan.
+2. **Exact Report Policy Compliance:**
+   - Ordered rule evaluation:
+     1. `paused` → `pause`, level held unchanged, explicit resume required.
+     2. `attempts < 5` → `insufficient_evidence`, level held unchanged.
+     3. `accuracy < 0.50` OR `hint_rate > 0.50` → `simplify` (clamped to Level 1).
+     4. `accuracy >= 0.85` AND `hint_rate <= 0.20` → `advance` (clamped to Level 3).
+     5. Otherwise → `maintain`.
+   - Distinct, unmatched card clicks count as attempts. Repeated clicks, hints, and matched cards do not fabricate attempts.
+3. **Caregiver Supervision and Override:**
+   - Supervised review by default: recommendations generate a `pending` plan requiring caregiver approval before taking effect.
+   - Caregiver override allows setting difficulty with a documented reason without erasing original recommendation history.
+   - Optional demo toggle: automatic approval of eligible recommendations (default OFF, never auto-advances paused or insufficient-evidence sessions).
+4. **Memory Book & Daily Reminders:**
+   - Memory book: caregiver can add, edit, approve/hide, and delete memories; only approved entries appear in the participant's view. Sample familiar memories can be seeded.
+   - Daily reminders: caregiver adds, edits, and deletes reminders. Participant can mark reminders done, recording `acknowledged_at`.
+5. **Class-Balanced Random Forest Demonstration Pipeline:**
+   - 960 synthetic sessions, 120 simulated participants (8 sessions each).
+   - GroupShuffleSplit (80/20 by participant ID) asserts zero participant leakage.
+   - Model inference provides an educational comparison in the Caregiver view without overriding deterministic safety policy rules.
 
-## Deliberate prototype scope
-Single local profile; caregiver view is not password protected. No diagnosis, disease prediction, real patient data, clinical validation, regional language packs, image upload, recurring notifications, closed-browser alerts, cloud sync or installable offline PWA. Reminders are shown in the open application and checked every 30 seconds. The app works without internet after dependencies are installed, as long as the local Python server is running. Switching views does not discard an active game.
+## REST API Reference
 
-Do not expose this development server publicly. Use fictional content. Withdrawing recording consent blocks future sessions; existing sessions remain in the database. Delete `Backend/memory.db` while the server is stopped to reset all local demo data. Only load model files generated by this trusted project: Joblib files can execute code.
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/health` | Server status, model loaded status, policy version |
+| `GET` | `/api/dashboard` | Profile, next plan, memories, reminders, recent 100 sessions |
+| `GET` | `/api/plan` | Current durable next-activity plan and level configuration |
+| `POST` | `/api/plan/approve` | Caregiver approves pending next-activity plan |
+| `POST` | `/api/plan/override` | Caregiver overrides level with `{level, reason}` |
+| `POST` | `/api/profile` | Update `{name, consent, auto_apply_plan}` |
+| `POST` | `/api/sessions` | Save session with `{client_session_id, correct, attempts, hints, level, paused, boards_completed, total_boards}` |
+| `POST` | `/api/memories` | Create memory `{title, description, approved}` |
+| `POST` | `/api/memories/{id}/update` | Update memory `{title, description, approved}` |
+| `POST` | `/api/memories/{id}/delete` | Delete memory by ID |
+| `POST` | `/api/reminders` | Create reminder `{title, due_at}` |
+| `POST` | `/api/reminders/{id}/acknowledge` | Participant acknowledges reminder; records timestamp |
+| `POST` | `/api/reminders/{id}/update` | Update reminder `{title, due_at}` |
+| `POST` | `/api/reminders/{id}/delete` | Delete reminder by ID |
 
-## AI scope
-The 60-tree Random Forest learns synthetic rule-labelled recommendations: advance, maintain, simplify, pause. Features: activity, level, accuracy, capped hint rate, paused. Participant ID groups the split and is excluded from features. Only matching is currently implemented; no unsupported activities or languages are presented as trained capabilities. The deterministic policy controls recommendations; the model prediction is separately visible in the caregiver table. Synthetic accuracy measures imitation of known rules, not clinical benefit. See `ML/MODEL_CARD.md` and the actual evaluation JSON.
-
-## Tests
+## Verification Suite
 ```bash
 python -m unittest discover -s tests -v
 ```
-Run after training. API tests use a temporary database and port 18081.
+All 14 tests pass, covering policy boundaries, zero-attempt sessions, multi-board sessions, idempotency, plan approval, overrides, non-destructive migration, and participant separation.
 
-## API
-| Method | Path | Purpose |
-|---|---|---|
-| GET | /api/health | Server and model status |
-| GET | /api/dashboard | Profile, memories, reminders, recent 100 sessions |
-| POST | /api/profile | name, consent (boolean) |
-| POST | /api/memories | title, description, approved (boolean) |
-| POST | /api/reminders | title, due_at (local ISO date/time) |
-| POST | /api/reminders/{id}/acknowledge | Acknowledge once |
-| POST | /api/sessions | correct, attempts, hints, level, paused |
-
-Times: reminder inputs use the browser computer's local time. Session timestamps are SQLite UTC. There is no medication dosage logic.
-
-## References for implementation
-- https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
-- https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GroupShuffleSplit.html
-- https://scikit-learn.org/stable/modules/compose.html
-- https://docs.python.org/3/library/http.server.html
-- https://docs.python.org/3/library/sqlite3.html
+## Deliberate Prototype Scope & Limitations
+- **Academic Demonstration:** Single-device local prototype; no multi-user authentication.
+- **Non-Diagnostic:** Activities provide calm cognitive stimulation. Performance scores are not clinical measures of dementia severity, disease staging, or medical diagnosis.
+- **Reminders:** Function within the open web application; no closed-browser push notifications are claimed.

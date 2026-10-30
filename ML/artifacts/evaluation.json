@@ -1,5 +1,6 @@
 {
   "data_source": "Synthetic rule-labelled demonstration data; not clinical validation",
+  "language": "English prototype (NER regional language support planned for future clinical evaluation)",
   "accuracy": 0.9947916666666666,
   "classification_report": {
     "advance": {
